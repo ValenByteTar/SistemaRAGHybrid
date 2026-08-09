@@ -14,6 +14,7 @@ from rich.console import Console
 if TYPE_CHECKING:
     from rag_hybrid import HybridRAG
 
+
 console = Console()
 
 # FASE 4.BIS (v4.1): Lexical Query Expansion exclusiva para BM25.
