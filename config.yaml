@@ -71,7 +71,7 @@ reranker:
   mix:
     hybrid_weight: 0.50
     rerank_weight: 0.50
-    
+  
 doccards:
   llm_enabled: true
   model_name: qwen3-4b-rag:latest
