@@ -1,0 +1,98 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hybrid-rag-cybersec"
+version = "1.0.0"
+description = "Hybrid RAG system for cybersecurity knowledge retrieval — BM25 + semantic embeddings + reciprocal rank fusion + LLM generation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Valentin Tarco" }]
+keywords = ["rag", "hybrid-retrieval", "cybersecurity", "bm25", "embeddings", "ollama", "chromadb"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Security",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "pymupdf>=1.23.0",
+    "sentence-transformers==2.5.1",
+    "transformers==4.38.0",
+    "chromadb>=0.4.22",
+    "numpy>=1.26.0,<3.0.0",
+    "rich>=13.7.0",
+    "tqdm>=4.66.0",
+    "pyyaml>=6.0.1",
+    "rank-bm25>=0.2.2",
+    "requests>=2.31.0",
+    "flask>=3.0.0",
+    "flask-cors>=4.0.0",
+    "ollama>=0.1.0",
+    "rapidfuzz>=3.6.1",
+    "spacy>=3.7.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/ValenByteTar/SistemaRAGHybrid"
+"Repository" = "https://github.com/ValenByteTar/SistemaRAGHybrid"
+
+# ---------------------------------------------------------------------------
+# Setuptools — pragmatic layout (transitional, documented in README)
+#
+# The project has modules in two locations:
+#   1. Root-level .py files (rag_hybrid.py, query_classifier.py, etc.)
+#      — legacy scripts, NOT installed as a package. Tests access them via
+#        conftest.py which adds the project root to sys.path.
+#   2. src/ directory — library modules (chunker.py, embedder.py, etc.)
+#      plus proper packages (src/rag/, src/utils/).
+#
+# This config makes the src/ modules importable via `pip install -e .`:
+#   - `import chunker`              → src/chunker.py
+#   - `from rag.entity_extractor`   → src/rag/entity_extractor.py
+#   - `from utils.config_loader`    → src/utils/config_loader.py
+#
+# Root-level modules remain importable in tests via conftest.py sys.path
+# management. A full src-layout migration is planned as Future Work.
+# ---------------------------------------------------------------------------
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+py-modules = [
+    "chunker",
+    "embedder",
+    "hash_registry",
+    "metrics_analyzer",
+    "metrics_logger",
+    "pdf_extractor",
+    "vector_store",
+]
+packages = ["rag", "utils"]
+
+# ---------------------------------------------------------------------------
+# Pytest configuration (consolidated from pytest.ini)
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "requires_models: tests that require local embedding/reranker models (skipped by default)",
+    "requires_ollama: tests that require a running Ollama instance (skipped by default)",
+    "requires_corpus: tests that require the ingested ChromaDB corpus (skipped by default)",
+]

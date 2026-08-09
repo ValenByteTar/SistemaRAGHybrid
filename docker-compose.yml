@@ -1,0 +1,8 @@
+services:
+  hybrid-rag:
+    build: .
+    container_name: hybrid-rag-quickstart
+    # Runs the quickstart demo (TextChunker + BM25, no models required)
+    # Override command to run tests instead:
+    #   docker compose run hybrid-rag pytest -ra
+    command: python examples/quickstart/run_demo.py

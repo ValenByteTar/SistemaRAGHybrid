@@ -4,12 +4,17 @@ venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
+*.egg-link
 .pytest_cache/
 .coverage
+htmlcov/
+.coverage.*
 .env
 .DS_Store
 .idea/
 .vscode/
+.mypy_cache/
+.ruff_cache/
 
 # Build artifacts
 build/
@@ -21,13 +26,19 @@ dist/
 pipeline_baseline*.json
 
 # Bases de datos vectoriales y modelos (datos de runtime, no código)
+Estudios/
 chroma_bge_m3/
 models/
 memory.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Datos extraídos y PDFs (grande, se regeneran)
 data/extracted_texts/
 data/training_dataset/
+data/*.json
+data/*.jsonl
 protocolosPDF/
 
 # Archivos binarios no esenciales en la raíz

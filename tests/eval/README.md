@@ -52,8 +52,8 @@
 |-----------|----------|-------------|
 | simple | 30 | Preguntas de un solo documento, factual |
 | multi_document | 11 | Requieren combinar 2-3 fuentes |
-| no_answer | 12 | La respuesta no esta en el corpus (chequeo de alucinacion) |
-| ambiguous | 10 | Preguntas vagas o de doble interpretacion |
+| no_answer | 13 | La respuesta no esta en el corpus (chequeo de alucinacion) |
+| ambiguous | 9 | Preguntas vagas o de doble interpretacion |
 | complex | 12 | Largas, requieren sintesis profunda |
 
 ## Metricas reportadas
@@ -78,6 +78,19 @@ El reporte distingue dos tipos de fallo:
   Intervencion: revisar el prompt, la evidencia gate, o el contexto construido.
 
 Esto permite separar problemas de recuperacion de problemas del modelo de lenguaje.
+
+## Nucleo determinista vs capa generativa
+
+La evaluacion tiene dos capas claramente separadas:
+
+- **Nucleo determinista (retrieval)**: Recall@1/3/5, MRR, Document Hit Rate, Page Hit Rate y Precision@K se calculan exclusivamente a partir de la lista de fuentes recuperadas contra el ground truth `(source, page)`. No dependen del LLM. Estas metricas son reproducibles y auditable.
+- **Capa generativa (end-to-end)**: keyword score, fidelidad de citas, anti-alucinacion y aprobacion final dependen de la respuesta del LLM. Son metricas auxiliares y estan sujetas a la variabilidad del modelo.
+
+El `run_retrieval_only.py` ejecuta unicamente el nucleo determinista (sin LLM), util para iterar en retrieval sin el costo de generacion.
+
+## Integridad de resultados historicos
+
+Los reportes en `reports/` son artefactos historicos inmutables. No se modifican las preguntas, ground truth, logica de evaluacion ni reportes existentes para mejorar los numeros reportados. Cualquier cambio de metodologia debe versionarse como una nueva evaluacion.
 
 ## Tolerancia de pagina
 

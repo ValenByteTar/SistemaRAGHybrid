@@ -1,49 +1,46 @@
-﻿# Sistema RAG Hibrido de Ciberseguridad
+﻿# Hybrid RAG Cybersecurity Knowledge System
 
-Sistema local de Recuperacion Aumentada por Generacion (RAG) para consultar documentacion tecnica de ciberseguridad. Combina recuperacion semantica, busqueda lexical, reranking y un LLM local mediante Ollama.
+![CI](https://github.com/ValenByteTar/SistemaRAGHybrid/actions/workflows/tests.yml/badge.svg)
 
-El proyecto esta pensado para ejecutarse en Windows desde un entorno virtual Python. No requiere claves de APIs externas para el flujo principal.
+An offline Hybrid RAG system for cybersecurity knowledge retrieval. It combines semantic search, lexical search (BM25), cross-encoder reranking, and a local LLM to answer questions over a corpus of cybersecurity technical documents — with no external API keys required for the main pipeline.
 
-## Contenido
-
-- [Que hace el sistema](#que-hace-el-sistema)
-- [Arquitectura](#arquitectura)
-- [Requisitos](#requisitos)
-- [Instalacion](#instalacion)
-- [Configuracion](#configuracion)
-- [Ingesta de documentos](#ingesta-de-documentos)
-- [Uso](#uso)
-- [Evaluacion](#evaluacion)
-- [Estructura del proyecto](#estructura-del-proyecto)
-- [Troubleshooting](#troubleshooting)
-- [Estado y limitaciones](#estado-y-limitaciones)
-
-## Que hace el sistema
-
-El flujo de consulta es:
-
-1. Recibe una pregunta en la interfaz web o en la consola.
-2. Clasifica la consulta, detecta entidades y aplica normalizaciones.
-3. Genera un embedding de la pregunta.
-4. Ejecuta busqueda semantica en ChromaDB y busqueda lexical BM25.
-5. Fusiona ambas fuentes de resultados.
-6. Reordena candidatos con un CrossEncoder.
-7. Construye un contexto con los fragmentos seleccionados.
-8. Aplica gates de evidencia y factualidad.
-9. Genera la respuesta con un LLM local gestionado por Ollama.
-10. Limpia y postprocesa la respuesta, incluyendo fuentes y paginas.
-
-La ingesta sigue este flujo:
-
-```text
-PDF -> PyMuPDF -> texto por pagina -> chunks por tokens -> embeddings -> ChromaDB
-                                                    |
-                                                    +-> metadata de fuente y pagina
+```
+Documents (PDF)
+    ↓
+Extraction (PyMuPDF, per-page)
+    ↓
+Chunking (token-based, with page metadata)
+    ↓
+Embeddings (BGE-M3) ─────┐
+                         ├── Hybrid Retrieval (weighted fusion)
+BM25 (rank-bm25) ────────┘
+                         ↓
+                   Reranking (BGE-reranker-v2-m3)
+                         ↓
+                   Context Building
+                         ↓
+                   Factual Gate (deterministic)
+                         ↓
+                   LLM Generation (Ollama, local)
+                         ↓
+                   Answer Postprocessing (citations, cleanup)
 ```
 
-## Arquitectura
+---
 
-```text
+## What problem does it solve?
+
+Cybersecurity knowledge is scattered across hundreds of PDFs — standards (NIST, ISO 27001, PCI DSS), certification guides (CISSP, CCSP, CEH), vendor documentation, and cheat sheets. Finding a specific fact (e.g. "what are the eight CISSP domains?" or "what does NIST CSF say about Zero Trust?") requires knowing which document to open and which page to read.
+
+This system lets a user ask a natural-language question and retrieves the most relevant chunks from the corpus, ranks them, and generates an answer grounded in the retrieved evidence — with citation markers like `[Doc 3 - NIST CSF v2 p.5]` so the answer is auditable.
+
+The key engineering challenge is **groundedness**: the system must answer when evidence exists and **decline** when it doesn't, rather than hallucinating from the LLM's parametric knowledge. A deterministic factual gate blocks answers to factual questions (CVEs, prices, RFCs, temperatures) when no literal evidence is found in the retrieved context.
+
+---
+
+## Architecture
+
+```
                  +-------------------+
                  |    Web / CLI      |
                  +---------+---------+
@@ -59,418 +56,385 @@ PDF -> PyMuPDF -> texto por pagina -> chunks por tokens -> embeddings -> ChromaD
           v                                 v
 +---------------------+           +---------------------+
 | RetrievalEngine     |           | ContextBuilder      |
-| - BGE semantic      |           | - contexto          |
-| - BM25              |           | - prompt            |
-| - fusion            |           +----------+----------+
+| - BGE-M3 semantic   |           | - context selection |
+| - BM25 lexical      |           | - prompt assembly   |
+| - weighted fusion   |           +----------+----------+
 | - CrossEncoder      |                      |
 +----------+----------+                      v
            |                         +---------------------+
-           v                         | Ollama / LLM local |
+           v                         | Ollama (LLM local)  |
 +---------------------+               +----------+----------+
 | ChromaDB            |                          |
 | BGE-M3 embeddings   |                          v
 +---------------------+               +---------------------+
-                                     | Postprocesamiento  |
-                                     | gates y fuentes    |
+                                     | AnswerPostprocessor |
+                                     | + Factual Gate      |
+                                     | citations, cleanup  |
                                      +---------------------+
 ```
 
-### Componentes principales
+### Components
 
-| Componente | Responsabilidad |
-|------------|-----------------|
-| `rag_hybrid.py` | Orquestacion completa del flujo de consulta |
-| `retrieval_engine.py` | Busqueda semantica, BM25, fusion, filtros y reranking |
-| `context_builder.py` | Seleccion y organizacion del contexto para el LLM |
-| `src/pdf_extractor.py` | Extraccion de texto pagina por pagina con PyMuPDF |
-| `src/chunker.py` | Segmentacion semantica o por tokens y metadata |
-| `src/embedder.py` | Generacion y normalizacion de embeddings |
-| `src/vector_store.py` | Persistencia y consulta de ChromaDB |
-| `src/rag/factual_gate.py` | Bloqueo de respuestas factuales sin evidencia suficiente |
-| `answer_postprocessor.py` | Limpieza y validacion de respuestas |
-| `ollama_manager.py` | Inicio, disponibilidad y comunicacion con Ollama |
-| `memory_system.py` | Memoria de conocimiento y contexto conversacional |
-| `doc_cards.py` | Roles y tarjetas de documentos |
+| Component | Responsibility |
+|---|---|
+| `rag_hybrid.py` | Main orchestrator — coordinates the full query flow |
+| `retrieval_engine.py` | Hybrid search: semantic + BM25, weighted fusion, reranking, filtering |
+| `context_builder.py` | Context selection and LLM prompt assembly by query type |
+| `answer_postprocessor.py` | Response cleanup, citation extraction, source deduplication |
+| `query_classifier.py` | Intent classification (out-of-domain, comparison, multi-doc, etc.) |
+| `equivalences_manager.py` | Synonym/acronym expansion and query normalization |
+| `src/pdf_extractor.py` | Per-page text extraction with PyMuPDF |
+| `src/chunker.py` | Token-based or semantic chunking with page/source metadata |
+| `src/embedder.py` | Embedding generation (BGE-M3) with caching |
+| `src/vector_store.py` | ChromaDB persistence and querying |
+| `src/rag/factual_gate.py` | Deterministic gate: blocks factual answers without literal evidence |
+| `src/rag/entity_extractor.py` | NER and document-reference extraction from queries |
+| `ollama_manager.py` | Ollama lifecycle and availability management |
+| `doc_cards.py` | Document role cards for retrieval planning |
+| `memory_system.py` | SQLite-based knowledge and conversational memory |
 
-## Requisitos
+### Hybrid fusion
 
-### Software
+Retrieval combines two signals into a single score:
 
-- Windows 10 o posterior
-- Python 3.10 o posterior
-- Python 3.12 recomendado por `requirements.txt`
-- Ollama instalado y disponible en `http://localhost:11434`
-- Git, opcional para clonar el repositorio
+```
+hybrid_score = semantic_weight * semantic_score + keyword_weight * keyword_score
+```
 
-### Hardware
+- **Semantic score**: `1 - cosine_distance` from ChromaDB (BGE-M3 embeddings)
+- **Keyword score**: BM25 score normalized by the max BM25 score across candidates
+- **Default weights**: `semantic_weight = 0.6`, `keyword_weight = 0.4` (configurable in `config.yaml`)
 
-- GPU CUDA recomendada para generar embeddings rapidamente
-- CPU soportada, pero la ingesta y las consultas seran mas lentas
-- Espacio suficiente para los modelos locales, ChromaDB y los PDFs
-- Para el LLM local, la memoria disponible depende del modelo elegido
+The top-K fused candidates are then reranked by a cross-encoder (`BGE-reranker-v2-m3`), and the final score blends hybrid and rerank scores (50/50 by default).
 
-### Modelos locales
+---
 
-La configuracion actual espera, como minimo:
+## Dataset
 
-- Embeddings: `models/BAAI-bge-m3`
-- Reranker: `models/BAAI-bge-reranker-v2-m3`
-- LLM: modelo disponible en Ollama, configurado en el codigo o en la configuracion correspondiente
+| Property | Value |
+|---|---|
+| Domain | Cybersecurity (standards, certifications, vendor docs, cheat sheets) |
+| Source documents | ~861 PDFs |
+| Indexed chunks | 100,480 |
+| Chunking | Token-based, 350 tokens per chunk, 50 token overlap |
+| Metadata per chunk | Source filename, page number, chunk index, document date |
 
-Los modelos locales no se descargan automaticamente por `pip`. Deben estar presentes en las rutas indicadas o ser configurados explicitamente.
+The corpus is not bundled in the repository (see [Limitations](#limitations)). It must be placed in `protocolosPDF/` and ingested via `build_rag_system.py`.
 
-## Instalacion
+---
 
-Desde PowerShell, ubicado en la raiz del proyecto:
+## Retrieval pipeline
+
+### Ingestion
+
+```
+PDF → PyMuPDF (per-page text) → token chunking → BGE-M3 embeddings → ChromaDB
+                                                        ↓
+                                              metadata: source, page, chunk_id
+```
+
+Full build:
+
+```powershell
+python build_rag_system.py --variant bge
+```
+
+Incremental ingestion (skips unchanged documents via SHA-256 hash):
+
+```powershell
+python ingest_incremental.py
+```
+
+### Query flow
+
+1. User submits a question via the web UI (`web_app.py`) or CLI (`chat.py`).
+2. The query is classified (out-of-domain, comparison, multi-document, etc.).
+3. Entities are extracted and the query is normalized (synonym/acronym expansion).
+4. A BGE-M3 embedding is generated for the query.
+5. Semantic search runs in ChromaDB; BM25 runs over the full chunk corpus.
+6. Results are fused via weighted linear combination.
+7. Top candidates are reranked by the cross-encoder.
+8. Context is assembled and the factual gate checks for literal evidence.
+9. The LLM (Ollama) generates an answer grounded in the context.
+10. The answer is postprocessed: citations are extracted, sources are deduplicated, forbidden phrases are checked.
+
+---
+
+## Evaluation
+
+The system is evaluated on a curated benchmark of **75 cybersecurity questions** with page-level ground truth. The benchmark covers five categories:
+
+| Category | Count | Description |
+|---|---|---|
+| `simple` | 30 | Single-document factual questions |
+| `multi_document` | 11 | Require combining 2–3 sources |
+| `complex` | 12 | Long questions requiring synthesis |
+| `no_answer` | 13 | Answer is not in the corpus (hallucination check) |
+| `ambiguous` | 9 | Vague or double-interpretation questions |
+
+### Methodology
+
+The evaluation separates **retrieval** from **generation** so failures can be diagnosed independently:
+
+- **Retrieval metrics** (deterministic, no LLM): Recall@K, MRR, Document Hit Rate, Page Hit Rate, Precision@K — computed from the ranked list of retrieved sources against the ground-truth `(source, page)` annotations.
+- **End-to-end approval**: A question passes if retrieval finds the correct source, the answer contains expected keywords, no forbidden phrases appear, and citation markers match retrieved sources. For `no_answer` questions, the system must decline (detected via decline-phrase matching).
+- **Factual gate**: A deterministic pattern-matching gate blocks answers to factual questions (CVEs, prices, RFCs, temperatures, passwords) when no literal evidence is found in the context. This is not an LLM judgment — it is a regex-based check.
+
+The full benchmark requires the ingested corpus, local models, and a running Ollama instance, so it is **not part of CI**. It is documented in `tests/eval/` and the historical reports are committed under `tests/eval/reports/`.
+
+### Results
+
+The following metrics are from the evaluation report dated 2026-07-18 (`tests/eval/reports/report_20260718_054522_corrected.md`). These are historical results — the benchmark questions, ground truth, and reports are treated as immutable artifacts (see [Engineering Decisions](#engineering-decisions)).
+
+**Retrieval metrics** (deterministic, computed from ranked sources):
+
+| Metric | Value |
+|---|---|
+| Document Hit Rate (hit@K) | 82.5% |
+| Page Hit Rate (hit@K, ±2 tolerance) | 77.8% |
+| Recall@1 | 0.349 |
+| Recall@3 | 0.619 |
+| Recall@5 | 0.746 |
+| MRR | 0.514 |
+| Precision@K | 0.322 |
+
+**End-to-end results** (retrieval + generation + anti-hallucination):
+
+| Metric | Value |
+|---|---|
+| Questions evaluated | 75 |
+| End-to-end approval | 94.7% (71/75) |
+| Answerable approval rate | 96.5% (55/57) |
+| No-answer approval rate (correct decline) | 69.2% (9/13) |
+| Real hallucinations | 0 (1 blocked by factual gate) |
+
+**Latency** (average per query):
+
+| Stage | Avg time | % of total |
+|---|---|---|
+| LLM generation | 41,915 ms | 98.3% |
+| Reranking | 3,491 ms | 8.2% |
+| BM25 search | 1,145 ms | 2.7% |
+| Query embedding | 744 ms | 1.7% |
+| Semantic search | 9 ms | 0.0% |
+| Fusion + ranking | 50 ms | 0.1% |
+| **Total** | **42,641 ms** | |
+
+**Notes on the end-to-end number**: The 94.7% end-to-end approval includes manual review of cases where the automatic harness marked a question as failed but the LLM produced a correct answer (e.g. the retriever found sufficient context from alternative sources, or the decline-phrase matcher didn't recognize a valid decline phrasing). The retrieval metrics (82.5% doc hit, 0.746 Recall@5) are fully automatic and were not adjusted. See the full report for the per-question breakdown.
+
+---
+
+## Engineering Decisions
+
+- **Full benchmark execution is kept outside CI** because it requires multi-gigabyte local models (BGE-M3, BGE-reranker-v2-m3), an ingested ChromaDB corpus, and a running Ollama instance. CI uses deterministic synthetic data to provide fast feedback on the retrieval and fusion logic instead.
+- **CI uses deterministic synthetic data** so that tests are reproducible on any machine without GPU, models, or external services.
+- **The current repository layout is intentionally preserved** to minimize migration risk around the legacy retrieval orchestrator (`rag_hybrid.py`). A full `src/`-layout migration is planned as future work.
+- **The quickstart intentionally avoids model dependencies** so the repository can be evaluated on a clean machine in under five minutes (see [Quickstart](#quickstart)).
+- **Historical evaluation results are immutable.** The benchmark questions, ground-truth annotations, evaluation logic, and committed reports under `tests/eval/reports/` are not modified to improve reported numbers. Any methodology change is versioned and reported as a new evaluation.
+
+---
+
+## Repository structure
+
+```
+SistemaRAGHybrid/
+├── rag_hybrid.py              # Main orchestrator (HybridRAG)
+├── retrieval_engine.py        # Hybrid search + fusion + reranking
+├── context_builder.py         # Context selection and prompt assembly
+├── answer_postprocessor.py    # Response cleanup and citation extraction
+├── query_classifier.py        # Intent classification
+├── equivalences_manager.py    # Synonym/acronym expansion
+├── ollama_manager.py          # Ollama lifecycle management
+├── doc_cards.py               # Document role cards
+├── memory_system.py           # SQLite knowledge/conversation memory
+├── conceptual_map.py          # Conceptual shortcuts
+├── learning_queue.py          # Deferred self-learning
+├── web_app.py                 # Flask web interface
+├── chat.py                    # CLI interface
+├── build_rag_system.py        # Full corpus ingestion
+├── ingest_incremental.py      # Incremental ingestion (hash-based)
+├── query_rag.py               # Semantic-only query mode
+├── config.yaml                # Central configuration
+├── requirements.txt           # Python dependencies
+├── src/
+│   ├── pdf_extractor.py       # PyMuPDF per-page extraction
+│   ├── chunker.py             # Token/semantic chunking
+│   ├── embedder.py            # BGE-M3 embedding generation + cache
+│   ├── vector_store.py        # ChromaDB persistence
+│   ├── hash_registry.py       # Document hash registry
+│   ├── rag/
+│   │   ├── factual_gate.py    # Deterministic factual evidence gate
+│   │   └── entity_extractor.py # NER and doc-reference extraction
+│   └── utils/
+│       ├── config_loader.py   # Centralized YAML config loading
+│       ├── console.py         # Console utilities
+│       └── device_utils.py    # CUDA/CPU device detection
+├── tests/
+│   ├── unit/                  # Unit tests (no models required)
+│   ├── eval/                  # 75-question benchmark + reports
+│   └── reports/               # Historical evaluation reports
+├── examples/
+│   └── quickstart/            # 5-minute demo (no models required)
+├── scripts/                   # Diagnostics and utilities
+├── tools/                     # Benchmarking tools
+└── docs/                      # Additional documentation
+```
+
+---
+
+## Installation
+
+### Prerequisites
+
+- Python 3.10+ (3.12 recommended)
+- Ollama installed and available at `http://localhost:11434` (for the full pipeline)
+- GPU with CUDA recommended (CPU works but ingestion and queries are slower)
+
+### Setup
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
-Si PowerShell bloquea la activacion del entorno, se puede ejecutar directamente el interprete:
+If PowerShell blocks script execution, use the interpreter directly:
 
 ```powershell
-.\.venv\Scripts\python.exe --version
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
-Comprobar Ollama:
+### Local models (full pipeline only)
+
+The full pipeline requires local models that are not downloaded by `pip`:
+
+- **Embeddings**: `models/BAAI-bge-m3`
+- **Reranker**: `models/BAAI-bge-reranker-v2-m3`
+- **LLM**: any model available in Ollama (configured in `config.yaml`)
 
 ```powershell
-ollama list
+ollama pull <model-name>
 ```
 
-Si el modelo de generacion no esta instalado, descargarlo con el nombre utilizado por la configuracion del proyecto:
+The quickstart and test suite do **not** require these models.
+
+---
+
+## Running the pipeline
+
+### Ingest the corpus
+
+1. Place PDFs in `protocolosPDF/`.
+2. Ensure local models are present.
+3. Run the build:
 
 ```powershell
-ollama pull <modelo-llm>
+python build_rag_system.py --variant bge
 ```
 
-No se debe agregar una API key al codigo. El flujo principal usa modelos locales.
+### Query
 
-## Configuracion
-
-La configuracion central esta en `config.yaml`.
-
-### Rutas principales
-
-```yaml
-paths:
-  pdf_dir: protocolosPDF
-  extracted_dir: data/extracted_texts
-  vectordb_dir_bge: chroma_bge_m3
-```
-
-- `protocolosPDF`: directorio de entrada de documentos.
-- `data/extracted_texts`: copias de texto extraido por PDF.
-- `chroma_bge_m3`: base vectorial persistente.
-
-### Chunking
-
-```yaml
-chunking:
-  token_chunking: true
-  token_chunk_size: 350
-  token_overlap: 50
-```
-
-El chunking actual se realiza por tokens y conserva la pagina de origen en la metadata.
-
-### Embeddings
-
-```yaml
-embeddings_bge:
-  model_name: models/BAAI-bge-m3
-  provider: sentence-transformers
-  device: cuda
-```
-
-Si no hay CUDA disponible, el sistema puede utilizar CPU, aunque con mayor latencia.
-
-### Retrieval y ChromaDB
-
-```yaml
-retrieval:
-  top_k: 10
-  semantic_weight: 0.6
-
-vectordb:
-  collection_name_bge: cybersec_docs_bge_m3
-  similarity_metric: cosine
-  search_ef: 64
-```
-
-### Reranker
-
-```yaml
-reranker:
-  model_name: models/BAAI-bge-reranker-v2-m3
-  candidate_pool: 35
-  mix:
-    hybrid_weight: 0.50
-    rerank_weight: 0.50
-```
-
-### Flags de RAG
-
-`config.yaml` tambien controla planner, DocCards, postprocesamiento, deduplicacion, fuentes, expansion de sinonimos y otras heuristicas. Los cambios de configuracion deben validarse con la suite de evaluacion antes de considerarse baseline.
-
-## Ingesta de documentos
-
-### Ingesta completa o rebuild
-
-1. Copiar los PDFs a `protocolosPDF/`.
-2. Verificar que los modelos de embeddings y reranking existan.
-3. Ejecutar el build:
+**Web UI** (Flask, default `http://localhost:5000`):
 
 ```powershell
-.\.venv\Scripts\python.exe build_rag_system.py
+python web_app.py
 ```
 
-El build procesa los PDFs por lotes:
-
-```text
-PDF -> extraccion por pagina -> chunking -> embeddings -> ChromaDB
-```
-
-El build puede limpiar la coleccion si `vectordb.rebuild_on_build` esta en `true`. Esta operacion elimina el indice anterior y requiere reconstruir todos los embeddings.
-
-Para elegir variante BGE explicitamente:
+**CLI**:
 
 ```powershell
-.\.venv\Scripts\python.exe build_rag_system.py --variant bge
+python chat.py
 ```
 
-Antes de ejecutar un rebuild, comprobar el valor de `rebuild_on_build` y respaldar la base si es necesario.
-
-### Ingesta incremental
-
-La ingesta incremental evita recalcular documentos sin cambios mediante un hash SHA256 del texto extraido completo:
+**Semantic-only query** (no LLM, shows retrieved chunks):
 
 ```powershell
-.\.venv\Scripts\python.exe ingest_incremental.py
+python query_rag.py
 ```
 
-El registro se guarda en `data/ingest_registry.json`. Si el hash ya existe, el documento se salta. Si se agregan o modifican PDFs, solo se procesan los hashes nuevos.
+---
 
-Reintentar documentos cuyo numero de chunks indexados fue menor al esperado:
+## Running tests
 
 ```powershell
-.\.venv\Scripts\python.exe ingest_incremental.py --retry-incomplete
+pytest
 ```
 
-Actualizar DocCards despues de incorporar documentos:
+The test suite (257 tests, ~4s) runs without local models, ChromaDB, or Ollama. It covers:
+
+- **Unit tests** (`tests/unit/`): chunking, entity extraction, query classification, fusion math, metadata contracts, config loading, embedder cache, postprocessing, prompt building.
+- **Integration tests** (`tests/integration/`): BM25 indexing and hybrid retrieval (BM25 + mock semantic fusion) on a synthetic 5-document cybersecurity corpus.
+- **Evaluation metric tests** (`tests/evaluation/`): deterministic verification of Recall@K, MRR, Doc/Page hit rate, precision@K, keyword scoring, hallucination detection, and citation fidelity against hand-computed expected values.
+
+Tests that require local models or Ollama are marked `@pytest.mark.requires_models` / `@pytest.mark.requires_ollama` and are skipped by default.
+
+### Full benchmark (manual, requires models + corpus)
 
 ```powershell
-.\.venv\Scripts\python.exe ingest_incremental.py --update-doccards
+python tests/eval/run_cybersec_eval.py
 ```
 
-### Que se almacena
+See `tests/eval/README.md` for details.
 
-Cada chunk queda en ChromaDB con:
+### Continuous Integration
 
-- ID unico
-- Texto del chunk
-- Embedding normalizado
-- Nombre y ruta del PDF
-- Numero de pagina
-- Indice del chunk
-- Fecha del documento cuando esta disponible
-- Categoria o seccion cuando esta disponible
+GitHub Actions runs the test suite and quickstart demo on every push and pull request to `main`, on Python 3.11 and 3.12 (`ubuntu-latest`). No models, GPU, or Ollama are required — only the deterministic unit, integration, and evaluation-metric tests plus the BM25 quickstart demo.
 
-Los PDFs escaneados o basados exclusivamente en imagen pueden no producir texto. Deben pasar por OCR antes de la ingesta.
+See `.github/workflows/tests.yml` for the workflow definition.
 
-## Uso
+---
 
-### Interfaz web
+## Quickstart
 
-Iniciar desde la raiz del proyecto:
+A 5-minute demo that runs on a clean machine with no models, no GPU, and no Ollama:
 
 ```powershell
-.\.venv\Scripts\python.exe web_app.py
+pip install -e ".[dev]"
+python examples/quickstart/run_demo.py
 ```
 
-La aplicacion Flask queda normalmente disponible en `http://localhost:5000`. La interfaz soporta respuestas en streaming y consulta el mismo `HybridRAG` que la CLI.
+This loads a 5-document cybersecurity corpus (~12 KB total), chunks it with `TextChunker` (19 chunks), builds a BM25 index, and runs 5 example queries. The entire demo completes in under 5 ms. It demonstrates the deterministic retrieval and chunking logic without embedding or LLM dependencies. See `examples/quickstart/README.md` for details.
 
-### Interfaz de consola
+---
 
-```powershell
-.\.venv\Scripts\python.exe chat.py
+## Docker
+
+The Docker image runs the quickstart demo (TextChunker + BM25, no models required):
+
+```bash
+docker compose up
 ```
 
-Tambien existe el entry point:
+To run the test suite inside the container instead:
 
-```powershell
-.\.venv\Scripts\python.exe chat_console_entry.py
+```bash
+docker compose run hybrid-rag pytest -ra
 ```
 
-Comandos habituales de la CLI:
+**What the image includes**: Python 3.12, the project installed in editable mode with dev dependencies, the quickstart corpus, and the test suite.
 
-| Comando | Accion |
-|---------|--------|
-| `/ayuda` | Muestra la ayuda |
-| `/fuentes` | Activa o desactiva fuentes |
-| `/detalles` | Muestra scores y fragmentos |
-| `/config` | Ajusta parametros de busqueda durante la sesion |
-| `/agregar` | Agrega conocimiento a la memoria |
-| `/memoria` | Consulta la memoria guardada |
-| `/contexto` | Limpia el historial conversacional |
-| `/limpiar` | Limpia la pantalla |
-| `/salir` | Cierra la aplicacion |
+**What the image does NOT include**: the BGE-M3 embedding model, the BGE-reranker-v2-m3 model, ChromaDB corpus data, or Ollama. The full pipeline requires these local resources and is not containerized — see [Limitations](#limitations) for details.
 
-### Consulta semantica basica
+---
 
-Para ejecutar una consulta sin el flujo completo del LLM:
+## Limitations
 
-```powershell
-.\.venv\Scripts\python.exe query_rag.py
-```
+- **Full pipeline requires local resources**: the complete system needs the BGE-M3 embedding model (~2 GB), the BGE-reranker-v2-m3 model, a running Ollama instance, and the ingested ChromaDB corpus. These are not bundled in the repository.
+- **Corpus is not included**: the ~861 PDFs must be provided separately and ingested via `build_rag_system.py`.
+- **GPU recommended**: ingestion and embedding generation are significantly slower on CPU.
+- **Windows-oriented**: the project was developed on Windows 10+ with PowerShell. It should work on Linux/macOS but has not been formally tested there.
+- **Latency is dominated by the LLM**: average query time is ~42 seconds, of which 98.3% is LLM generation. This is a function of the local model size, not the retrieval pipeline.
+- **No-answer detection is imperfect**: the system correctly declines 69.2% of unanswerable questions. The remaining failures involve decline phrasings not recognized by the harness or forbidden terms mentioned in the context of declining.
+- **Repository layout is transitional**: the project has root-level scripts (e.g., `rag_hybrid.py`, `query_classifier.py`) and a `src/` directory with library modules. The `pyproject.toml` editable install makes `src/` modules importable as top-level modules (`import chunker`, `from rag.entity_extractor import ...`). Root-level modules remain accessible in tests via `conftest.py`. A full `src/`-layout migration that consolidates all modules into a single package hierarchy is planned as Future Work.
 
-Este modo consulta ChromaDB, aplica el threshold configurado y muestra los fragmentos recuperados con fuente, pagina y score.
+---
 
-## Evaluacion
+## Future work
 
-La suite esta en `tests/eval/` y usa un dataset de 75 preguntas con ground truth de fuentes, paginas, keywords y casos no respondibles.
-
-Ejecutar la suite completa:
-
-```powershell
-.\.venv\Scripts\python.exe tests/eval/run_cybersec_eval.py
-```
-
-Ejecutar un subconjunto:
-
-```powershell
-.\.venv\Scripts\python.exe tests/eval/run_cybersec_eval.py --ids 1,5,21
-.\.venv\Scripts\python.exe tests/eval/run_cybersec_eval.py --category no_answer
-.\.venv\Scripts\python.exe tests/eval/run_cybersec_eval.py --limit 15
-.\.venv\Scripts\python.exe tests/eval/run_cybersec_eval.py --kw-threshold 0.3
-```
-
-La suite genera reportes JSON y Markdown en `tests/eval/reports/`.
-
-Metricas principales:
-
-- `doc_hit`: documento esperado recuperado.
-- `page_hit`: pagina esperada recuperada dentro de la tolerancia.
-- `MRR` y `recall`: posicion y cobertura de documentos esperados.
-- `keyword_score`: presencia de conceptos esperados en la respuesta.
-- `groundedness`: ausencia de contenido prohibido o no sustentado segun el caso.
-- `anti-hallucination`: capacidad de declinar preguntas sin evidencia.
-- Latencia total y breakdown por etapas.
-
-Para construir o revisar ground truth:
-
-```powershell
-.\.venv\Scripts\python.exe tests/eval/build_ground_truth.py --search "never trust always verify"
-.\.venv\Scripts\python.exe tests/eval/build_ground_truth.py --list-sources --limit 30
-```
-
-## Pruebas y diagnostico
-
-Ejecutar tests disponibles:
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest tests/ -q
-```
-
-Para diagnostico, revisar especialmente:
-
-- Logs de `web_app.py` y de la consola.
-- Conteo de la coleccion `cybersec_docs_bge_m3`.
-- `data/ingest_registry.json`.
-- `data/extracted_texts/`.
-- Reportes en `tests/eval/reports/`.
-
-## Estructura del proyecto
-
-```text
-SistemaRAGHybrid/
-|-- rag_hybrid.py
-|-- retrieval_engine.py
-|-- context_builder.py
-|-- answer_postprocessor.py
-|-- ollama_manager.py
-|-- query_classifier.py
-|-- doc_cards.py
-|-- memory_system.py
-|-- conceptual_map.py
-|-- learning_queue.py
-|-- equivalences_manager.py
-|-- web_app.py
-|-- chat.py
-|-- chat_console_entry.py
-|-- query_rag.py
-|-- build_rag_system.py
-|-- ingest_incremental.py
-|-- config.yaml
-|-- requirements.txt
-|-- protocolosPDF/
-|-- data/
-|   |-- extracted_texts/
-|   |-- ingest_registry.json
-|   `-- doc_roles.json
-|-- chroma_bge_m3/
-|-- models/
-|   |-- BAAI-bge-m3/
-|   `-- BAAI-bge-reranker-v2-m3/
-|-- src/
-|   |-- pdf_extractor.py
-|   |-- chunker.py
-|   |-- embedder.py
-|   |-- vector_store.py
-|   |-- hash_registry.py
-|   |-- factual_gate.py
-|   |-- rag/
-|   `-- utils/
-|-- tests/eval/
-|-- docs/
-|-- templates/
-`-- static/
-```
-
-## Troubleshooting
-
-### No se puede cargar el embedding
-
-Verificar que exista `models/BAAI-bge-m3`, que el `device` sea valido y que las dependencias de `sentence-transformers` esten instaladas dentro de `.venv`.
-
-### Ollama no responde
-
-Comprobar que el servicio esta iniciado y que el modelo requerido aparece en `ollama list`. El sistema no puede generar respuestas si Ollama esta detenido o el modelo no existe.
-
-### ChromaDB vacio
-
-Ejecutar un build completo o la ingesta incremental. Verificar que haya PDFs con texto extraible en `protocolosPDF/`.
-
-### No se recuperan paginas esperadas
-
-Revisar que la ingesta haya sido ejecutada despues de cambiar chunking o metadata. El ground truth y el indice deben corresponder al mismo corpus.
-
-### La ingesta se detiene por memoria
-
-Reducir el batch de PDFs de `build_rag_system.py`, usar CPU si la GPU no tiene suficiente VRAM y revisar que el modelo de embeddings limite la longitud de secuencia.
-
-### Windows muestra errores de encoding
-
-Ejecutar con el entorno virtual del proyecto y mantener la salida en UTF-8. El core intenta reconfigurar stdout y stderr a UTF-8, pero la terminal tambien debe soportar esa codificacion.
-
-## Estado y limitaciones
-
-El pipeline actual esta orientado a un corpus tecnico de ciberseguridad y a modelos locales. Las principales limitaciones son:
-
-- La calidad depende de que los documentos tengan texto extraible.
-- Las preguntas que no estan sustentadas en el corpus deben ser rechazadas.
-- El reranker y los embeddings locales pueden tener menor rendimiento en consultas cross-lingual.
-- El tiempo de respuesta esta dominado por la generacion del LLM local.
-- Cambiar el modelo, el chunking o el ground truth requiere revalidar la suite.
-- Las carpetas de modelos, ChromaDB, PDFs y datos generados no deben versionarse sin una decision explicita.
-
-El baseline validado del proyecto se documenta en `tests/eval/reports/` y en el plan de mejora de `C:\Users\Valen\.windsurf\plans\pipeline-improvement-v7-ac133e.md`.
-
-## Licencia
-
-Uso interno.
+- **Full `src/`-layout migration**: move root modules into a proper `src/hybrid_rag/` package and eliminate `sys.path` hacks.
+- **Split `rag_hybrid.py`**: the main orchestrator is a single 297 KB file; decomposing it into focused components is a priority for maintainability.
+- **Agentic RAG evolution**: this repository represents the Hybrid RAG stage of the project. The system is currently being evolved toward an Agentic RAG architecture with separated knowledge construction and runtime consumption.
+- **Latency reduction**: target <30 seconds per query by optimizing LLM inference (quantization, smaller models, or batching).
+- **Improved no-answer detection**: expand decline-phrase recognition and allow forbidden terms in decline context.
+- **Cross-platform testing**: formal Linux/macOS CI support.

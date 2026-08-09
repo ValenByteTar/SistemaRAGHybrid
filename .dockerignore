@@ -1,0 +1,29 @@
+# Exclude heavy/local-only artifacts from the Docker image
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.github/
+
+# Local models and data (not needed for quickstart)
+models/
+chroma_bge_m3/
+protocolosPDF/
+data/
+*.db
+*.sqlite3
+
+# Reports and logs
+tests/eval/reports/
+*.log
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store

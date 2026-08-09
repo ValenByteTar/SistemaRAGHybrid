@@ -1,0 +1,50 @@
+Firewall Fundamentals — Network Security Architecture
+
+A firewall is a network security device or software that monitors and filters
+incoming and outgoing network traffic based on an organization's previously
+established security policies. Firewalls are the first line of defense in network
+security, establishing a barrier between trusted internal networks and untrusted
+external networks such as the Internet.
+
+Types of Firewalls:
+
+1. Packet-Filtering Firewalls — Operate at the network layer (Layer 3) and transport
+   layer (Layer 4) of the OSI model. They examine packet headers and make filtering
+   decisions based on source IP, destination IP, port numbers, and protocol.
+   Examples: iptables, Cisco ACLs.
+
+2. Stateful Inspection Firewalls — Track the state of network connections and make
+   filtering decisions based on the context of the connection. They maintain a state
+   table that records active connections. Most modern network firewalls use stateful
+   inspection.
+
+3. Proxy Firewalls (Application-Level Gateways) — Operate at the application layer
+   (Layer 7) and act as intermediaries between clients and servers. They inspect the
+   actual content of the traffic and can enforce application-specific security policies.
+
+4. Next-Generation Firewalls (NGFW) — Combine traditional firewall capabilities with
+   additional features such as intrusion prevention (IPS), deep packet inspection (DPI),
+   application awareness, and threat intelligence integration. Leading vendors include
+   Palo Alto Networks, Fortinet, and Cisco Firepower.
+
+5. Web Application Firewalls (WAF) — Protect web applications from attacks such as
+   SQL injection, cross-site scripting (XSS), and session hijacking. They inspect
+   HTTP traffic and apply rules based on the OWASP Top 10.
+
+Firewall Deployment Architectures:
+
+- Perimeter Firewall — Placed at the network boundary to control traffic between
+  the internal network and the Internet.
+
+- Internal Segmentation Firewall — Divides the internal network into security zones
+  to limit lateral movement of threats.
+
+- Cloud Firewall — Protects cloud infrastructure and applications. Examples include
+  AWS Network Firewall, Azure Firewall, and cloud-native WAFs.
+
+Best practices for firewall configuration include:
+- Default deny policy (deny all traffic, allow only what is explicitly needed)
+- Principle of least privilege for access rules
+- Regular rule review and cleanup
+- Logging and monitoring of firewall events
+- Regular security updates and patch management

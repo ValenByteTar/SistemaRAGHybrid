@@ -1,0 +1,51 @@
+CISSP Certification — Eight Domains of Knowledge
+
+The Certified Information Systems Security Professional (CISSP) is an advanced
+certification offered by (ISC)2 (now ISC2). It is designed for experienced security
+practitioners, managers, and executives who design, implement, and manage a best-in-class
+cybersecurity program. The certification requires at least five years of cumulative
+paid work experience in two or more of the eight domains of the CISSP Common Body
+of Knowledge (CBK).
+
+The CISSP exam covers eight domains:
+
+Domain 1: Security and Risk Management (16% of exam)
+Covers confidentiality, integrity, and availability (CIA triad), risk management
+processes, governance, compliance, legal and regulatory issues, business continuity
+planning, and security policies and procedures.
+
+Domain 2: Asset Security (10% of exam)
+Addresses data classification, data ownership, privacy, asset handling, and data
+remanence. Includes data lifecycle management and data security controls.
+
+Domain 3: Security Architecture and Engineering (13% of exam)
+Covers security models, system architecture, security capabilities of information
+systems, cryptography, and physical security design principles.
+
+Domain 4: Communication and Network Security (13% of exam)
+Addresses network architecture, secure network components, secure communication
+channels, and network attacks and countermeasures. Includes TCP/IP, firewalls,
+VPN, and network access control.
+
+Domain 5: Identity and Access Management (IAM) (13% of exam)
+Covers authentication, authorization, and accountability. Includes access control
+models (MAC, DAC, RBAC), identity management lifecycle, and credential management
+practices such as single sign-on (SSO) and multi-factor authentication (MFA).
+
+Domain 6: Security Assessment and Testing (12% of exam)
+Addresses vulnerability assessments, penetration testing, security audits, log
+management, and continuous monitoring. Includes assessment types (internal, external,
+white-box, black-box, grey-box).
+
+Domain 7: Security Operations (13% of exam)
+Covers incident response, disaster recovery, access control implementation, security
+operations center (SOC) activities, and day-to-day security operations.
+
+Domain 8: Software Development Security (10% of exam)
+Addresses security in the software development lifecycle (SDLC), secure coding
+practices, malware types, and database security. Includes OWASP Top 10 and
+DevSecOps practices.
+
+The exam consists of 100-150 questions in a Computerized Adaptive Testing (CAT)
+format for English-language candidates, with a time limit of 3 hours. The passing
+score is 700 out of 1000 points.
